@@ -17,11 +17,16 @@ bool moved = false;
 // From the URL: https://medium.com/@mortificador/implementing-std-tuple-in-c-17-3cc5c6da7277
 // 
 // I made some changes
-// for my own clarity, such as changing names ( as they would say in Dragnet, to protect the innnocent)
+// for my own clarity, such as changing names ( as they would say in Dragnet, to protect the innocent)
  
 // _TupleVal used to hold the value of a tuple
 // I (index) is not used directly, but distinguishes template instances from each other
 // In other words, if the I is different in two instances, then the types are not the same.
+//
+// e.g. these are different types
+// tuple<0,int>
+// tuple<1,int>
+// 
 template <std::size_t I, typename T>
 class _TupleVal
 {
@@ -58,14 +63,26 @@ class _TupleBase
 // It uses multiple inheritance.
 // It inherits from itself ( _TupleBase ) to hold the values for the types in restT.
 // It inherits from _TupleVal, to hold the value for the index I and firstT.
+//
+// Example, say we instantiate a _tupleBase with two integers...
+// using MyTuple = _TupleBase<0,int,string>
+// We will get a class something like:
+// class _TupleBase<0,int,string> : _TupleVal<0,int>, _TupleBase<1,string>
+// And _TupleBase<1,string> would be something like:
+// class _TupleBase<1,string> : _TupleVal<1,string>, _TupleBase<2>
 template <std::size_t I, typename firstT, typename ...restT>
-class _TupleBase<I, firstT, restT...> : 
+class _TupleBase<I, firstT, restT...> :
     public _TupleVal<I, firstT>,
-    public _TupleBase<I + 1, restT...>
+    public _TupleBase<I + 1, restT...>       
 {
 public:
     // Constructor
 
+    // e.g. _TupleBase<0,int,string>(1,"s") will result in a member function similar to this:
+    //   _TupleBase(int && firstArg, string &&arg2)
+    //   The constructor will initialize the base members with code similar to this:
+    //    _TupleVal<0,int>(std::forward<int>(firstArg))
+    //    _TupleBase<1,string>( std::forward<string>(arg2))
     template <typename T, typename ...restT>
     _TupleBase(T &&firstArg, restT && ...restArgs) :
         _TupleVal<I, firstT>(std::forward<T>(firstArg)),
@@ -99,6 +116,12 @@ class Tuple : public _TupleBase<0, firstT, restT...>
 template <std::size_t I, typename firstT, typename ...restT>
 struct _getTupleType
 {
+    // .e.g.
+    // using MyTuple = _TupleBase<0, int, string>
+    // -> _getTupleType<1,int,string>::type
+    // -> using type = typename _getTupleType<0,string>::type
+    // -> using type = string; // Using template specialization below:
+    //    struct _getTupleType<0, int> { using type = int; }
     using type = typename _getTupleType<I - 1, restT...>::type;
 };
 
@@ -108,16 +131,15 @@ struct _getTupleType<0, firstT, restT...>
 {
     using type = firstT;
 };
- 
+
 // Template function to get a value from a tuple.  Uses cast, to downcast to the correct
 // base class holding the value.  The syntax is pretty ugly as C++ goes.
-// For example, say get<0>(t), where t is tuple<int>:
-// * Use _getTupleType<> to get the type of the tuple value at index 0 ( 0 is the first value in the tuple)
-// * The type is a struct with a type alias called "type"
-// * Using "::type" instantiate _TupleVal with 0, and int ( ::type is an int)
-// * static_cast the tuple ( tpl) to this type
-// * Call the get() function, on the tuple cast to the appropriate base class
-// tuples with multiple values, use recursion to get at the correct cast.
+//
+// e.g.
+// using MyTuple = Tuple<int,string>;
+// MyTuple t { 1, "s" };
+// get<1>(t) -> get( Tuple<int,string> &arg) { return static_cast<_TupleVal<1, _getTupleType<1, int, string>::type>>(tpl).get(); }
+// -> static_cast<_TupleVal<1, string>(tpl).get()
 template<size_t I, typename ...restT>
 auto get(Tuple<restT...>& tpl)
 {
